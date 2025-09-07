@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Deteksi Serangan Jaringan</title>
+</head>
+<body>
+    <h2>Klasifikasi Model Naive Bayes dan Decision Tree</h2>
+    <form method="post" action="/predict">
+        <label>orig_bytes:</label><br>
+        <input type="text" name="orig_bytes"><br><br>
+        
+        <label>resp_bytes:</label><br>
+        <input type="text" name="resp_bytes"><br><br>
+        
+        <label>orig_pkts:</label><br>
+        <input type="text" name="orig_pkts"><br><br>
+        
+        <label>resp_pkts:</label><br>
+        <input type="text" name="resp_pkts"><br><br>
+        
+        <input type="submit" value="Prediksi">
+    </form>
+
+    {% if result_nb %}
+        <h3>{{ result_nb }}</h3>
+    {% endif %}
+    {% if result_dt %}
+        <h3>{{ result_dt }}</h3>
+    {% endif %}
+</body>
+</html>
