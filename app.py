@@ -6,13 +6,16 @@ import seaborn as sns
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.tree import plot_tree
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import cross_val_score
+
 
 # === Load Model ===
 nb_model = joblib.load("naive_bayes_model.pkl")
 dt_model = joblib.load("decision_tree_model.pkl")
 le = joblib.load("label_encoder.pkl")  # << load encoder label
 
-st.title("Prototype Klasifikasi Malware Berdasarkan Aktivitas Jaringan")
+st.title("Prototype Klasifikasi Malware Berdasarkan log Aktivitas Jaringan")
 st.write("Upload file `.csv` untuk klasifikasi dan evaluasi model.")
 
 uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
@@ -23,10 +26,17 @@ if uploaded_file is not None:
     st.subheader("Data Awal")
     st.dataframe(df.head())
 
+    # st.write("### Distribusi Label Asli")
+    # st.table(df['label'].value_counts())
+  
     # === Preprocessing ===
-    X = df.drop(columns=["label","detailed-label","ts","uid","id.orig_h","id.resp_h"], errors="ignore")
+    X = df.drop(columns=["label","detailed-label","uid", "ts", "id.orig_h", "id.resp_h"], errors="ignore")
     X = X.replace("-",0)
     X = X.apply(pd.to_numeric, errors="coerce").fillna(0)
+
+    X_dt = df.drop(columns=["label","detailed-label","uid", "ts", "id.orig_h", "id.resp_h" ,"orig_ip_bytes"], errors="ignore")
+    X_dt = X_dt.replace("-",0)
+    X_dt = X_dt.apply(pd.to_numeric, errors="coerce").fillna(0)
 
     if "label" in df.columns:
         y = df["label"]
@@ -36,12 +46,12 @@ if uploaded_file is not None:
     else:
         y = None
         y_encoded = None
-        class_names = ["Benign", "Malicious"]
+        class_names = ["Benign", "Malicious", "Malicious C&C"]
 
     if st.button("🔎 Jalankan Klasifikasi"):
         # === Prediksi ===
         pred_nb = nb_model.predict(X)
-        pred_dt = dt_model.predict(X)
+        pred_dt = dt_model.predict(X_dt)
 
         df_result = df.copy()
         df_result["Prediksi_NaiveBayes"] = pred_nb
@@ -66,19 +76,36 @@ if uploaded_file is not None:
             st.write("### 📌 Naive Bayes")
             df_nb = pd.DataFrame({
                 "Precision": [report_nb[c]["precision"] for c in class_names],
-                "Recall": [report_nb[c]["recall"] for c in class_names]
+                "Recall": [report_nb[c]["recall"] for c in class_names],
+                "F1-Score": [report_nb[c]["f1-score"] for c in class_names]
             }, index=class_names)
-            df_nb.loc["Accuracy"] = [acc_nb, acc_nb]
+            df_nb.loc["Accuracy"] = [acc_nb, acc_nb, acc_nb]
             st.table(df_nb)
 
             # === Tabel Evaluasi DT ===
             st.write("### 📌 Decision Tree")
             df_dt = pd.DataFrame({
                 "Precision": [report_dt[c]["precision"] for c in class_names],
-                "Recall": [report_dt[c]["recall"] for c in class_names]
+                "Recall": [report_dt[c]["recall"] for c in class_names],
+                "F1-Score": [report_dt[c]["f1-score"] for c in class_names]
             }, index=class_names)
-            df_dt.loc["Accuracy"] = [acc_dt, acc_dt]
+            df_dt.loc["Accuracy"] = [acc_dt, acc_dt, acc_dt]
             st.table(df_dt)
+
+            # === Biar akurasi konsisten ===
+            acc_nb = accuracy_score(y_encoded, pred_nb)
+            acc_dt = accuracy_score(y_encoded, pred_dt)
+
+            # Bulatkan ke 2 angka desimal persen
+            acc_nb_str = f"{acc_nb*100:.2f}%"
+            acc_dt_str = f"{acc_dt*100:.2f}%"
+
+            # Saat bikin tabel
+            summary_acc = pd.DataFrame({
+                "Model": ["Naive Bayes", "Decision Tree"],
+                "Accuracy": [acc_nb_str, acc_dt_str]
+            })
+
 
             # === Confusion Matrix NB ===
             st.write("### Confusion Matrix - Naive Bayes")
@@ -95,13 +122,29 @@ if uploaded_file is not None:
             st.pyplot(fig)
 
             # === Pohon Keputusan ===
-            st.write("### 🌳 Visualisasi Pohon Keputusan (max_depth=3)")
+            st.write("### 🌳 Visualisasi Pohon Keputusan ")
             fig, ax = plt.subplots(figsize=(12,6))
-            plot_tree(dt_model, feature_names=X.columns, class_names=class_names,
+            plot_tree(dt_model, feature_names=X_dt.columns, class_names=class_names,
                       filled=True, rounded=True, fontsize=8, max_depth=3, ax=ax)
             st.pyplot(fig)
+            
+            # # == feature importance DT ===
+            st.write("### 🔍 Feature Importance - Decision Tree")
+            feature_importances = pd.DataFrame({
+            "Feature": X_dt.columns,
+            "Importance": dt_model.feature_importances_
+                 }).sort_values(by="Importance", ascending=False)
 
-                    # === Summary Akurasi NB vs DT ===
+            importances = pd.Series(dt_model.feature_importances_, index=X_dt.columns)
+            importances = importances.sort_values(ascending=False)
+
+            plt.figure(figsize=(10,6))
+            sns.barplot(x=importances, y=importances.index)
+            plt.title("Feature Importance - Decision Tree")
+            plt.show()
+            st.pyplot(plt)
+
+            # === Summary Akurasi NB vs DT ===
             st.write("## 📊 Perbandingan Akurasi Model")
 
             summary_acc = pd.DataFrame({
@@ -111,7 +154,7 @@ if uploaded_file is not None:
 
             st.table(summary_acc)
 
-            # === Grafik Perbandingan Akurasi ===
+        # === Grafik Perbandingan Akurasi ===
             fig, ax = plt.subplots()
             sns.barplot(x="Model", y="Accuracy", data=summary_acc, palette="viridis", ax=ax)
             ax.set_ylim(0, 1)  # supaya skala dari 0 sampai 1
@@ -123,7 +166,7 @@ if uploaded_file is not None:
         if "label" in df.columns:
             y_true = le.transform(df["label"])
             acc_nb = accuracy_score(y_true, nb_model.predict(X))
-            acc_dt = accuracy_score(y_true, dt_model.predict(X))
+            acc_dt = accuracy_score(y_true, dt_model.predict(X_dt))
 
             # Tabel akurasi
             acc_table = pd.DataFrame({
@@ -132,6 +175,7 @@ if uploaded_file is not None:
             })
             st.subheader("📊 Perbandingan Akurasi Model")
             st.table(acc_table)
+
    # === Hitung Positif (Malicious) & Negatif (Benign) ===
             total_benign = (y == 0).sum()
             total_malicious = (y == 1).sum()
